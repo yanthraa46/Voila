@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for backend API contract tests."""
+"""Shared pytest fixtures for API contract tests."""
 import os
 import sys
 

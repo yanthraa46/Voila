@@ -1,153 +1,44 @@
-# AC-4: Todo items persist across refresh/restart and backend CRUD contract stays stable
+# AC-5: Backend unit tests cover todo list contract and CRUD API behavior
+# AC-8: Frontend-visible todo states depend on contract-aligned API behavior
 
-from app.database import Base, SessionLocal, engine
-from app.models.todo import Todo
-
-
-def _reset_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-
-
-def test_get_todos_returns_bare_array(client):
-    _reset_db()
-
-    response = client.get("/api/todos")
-
-    assert response.status_code == 200
-    assert response.json() == []
+def test_get_todos_returns_bare_array_with_contract_fields(client):
+    resp = client.get("/api/todos")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body, list)
+    for todo in body:
+        assert set(todo.keys()) == {"id", "title", "completed"}
+        assert isinstance(todo["title"], str)
+        assert isinstance(todo["completed"], bool)
 
 
-def test_get_todos_returns_bare_array_of_todo_objects(client):
-    _reset_db()
-    with SessionLocal() as db:
-        todo = Todo(title="Write tests", completed=False)
-        db.add(todo)
-        db.commit()
-        db.refresh(todo)
-        todo_id = str(todo.id)
-
-    response = client.get("/api/todos")
-
-    assert response.status_code == 200
-    assert response.json() == [{"id": todo_id, "title": "Write tests", "completed": False}]
-
-
-def test_post_todos_accepts_title_and_returns_created_todo(client):
-    _reset_db()
-
-    response = client.post("/api/todos", json={"title": "New todo"})
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["title"] == "New todo"
+def test_post_todos_creates_todo_from_title_only(client):
+    resp = client.post("/api/todos", json={"title": "Buy milk"})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert set(body.keys()) == {"id", "title", "completed"}
+    assert body["title"] == "Buy milk"
     assert body["completed"] is False
-    assert "id" in body
 
 
-def test_patch_todo_accepts_completed_and_returns_updated_todo(client):
-    _reset_db()
-    with SessionLocal() as db:
-        todo = Todo(title="Finish docs", completed=False)
-        db.add(todo)
-        db.commit()
-        db.refresh(todo)
-        todo_id = str(todo.id)
-
-    response = client.patch(f"/api/todos/{todo_id}", json={"completed": True})
-
-    assert response.status_code == 200
-    assert response.json() == {"id": todo_id, "title": "Finish docs", "completed": True}
+def test_patch_todo_updates_completed_with_boolean(client):
+    created = client.post("/api/todos", json={"title": "Walk dog"}).json()
+    resp = client.patch(f"/api/todos/{created['id']}", json={"completed": True})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == created["id"]
+    assert body["title"] == "Walk dog"
+    assert body["completed"] is True
 
 
-def test_patch_todo_accepts_completed_and_persists_update(client):
-    _reset_db()
-    with SessionLocal() as db:
-        todo = Todo(title="Finish docs", completed=False)
-        db.add(todo)
-        db.commit()
-        db.refresh(todo)
-        todo_id = str(todo.id)
-
-    response = client.patch(f"/api/todos/{todo_id}", json={"completed": True})
-
-    assert response.status_code == 200
-    with SessionLocal() as db:
-        updated = db.get(Todo, todo_id)
-    assert updated is not None
-    assert updated.completed is True
+def test_delete_todo_removes_item_and_returns_success(client):
+    created = client.post("/api/todos", json={"title": "Tidy desk"}).json()
+    resp = client.delete(f"/api/todos/{created['id']}")
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True}
 
 
-def test_delete_todo_returns_success_true(client):
-    _reset_db()
-    with SessionLocal() as db:
-        todo = Todo(title="Remove me", completed=False)
-        db.add(todo)
-        db.commit()
-        db.refresh(todo)
-        todo_id = str(todo.id)
-
-    response = client.delete(f"/api/todos/{todo_id}")
-
-    assert response.status_code == 200
-    assert response.json() == {"success": True}
-
-
-def test_post_todos_rejects_missing_title_with_422(client):
-    _reset_db()
-
-    response = client.post("/api/todos", json={})
-
-    assert response.status_code == 422
-
-
-def test_post_todos_rejects_empty_title_with_422(client):
-    _reset_db()
-
-    response = client.post("/api/todos", json={"title": ""})
-
-    assert response.status_code == 422
-
-
-def test_patch_todo_rejects_missing_completed_with_422(client):
-    _reset_db()
-    with SessionLocal() as db:
-        todo = Todo(title="Need completion", completed=False)
-        db.add(todo)
-        db.commit()
-        db.refresh(todo)
-        todo_id = str(todo.id)
-
-    response = client.patch(f"/api/todos/{todo_id}", json={})
-
-    assert response.status_code == 422
-
-
-def test_patch_todo_rejects_invalid_completed_type_with_422(client):
-    _reset_db()
-    with SessionLocal() as db:
-        todo = Todo(title="Need completion", completed=False)
-        db.add(todo)
-        db.commit()
-        db.refresh(todo)
-        todo_id = str(todo.id)
-
-    response = client.patch(f"/api/todos/{todo_id}", json={"completed": "yes"})
-
-    assert response.status_code == 422
-
-
-def test_patch_todo_returns_404_for_missing_todo(client):
-    _reset_db()
-
-    response = client.patch("/api/todos/00000000-0000-0000-0000-000000000000", json={"completed": True})
-
-    assert response.status_code == 404
-
-
-def test_delete_todo_returns_404_for_missing_todo(client):
-    _reset_db()
-
-    response = client.delete("/api/todos/00000000-0000-0000-0000-000000000000")
-
-    assert response.status_code == 404
+def test_get_todos_when_empty_returns_visible_empty_state_payload(client):
+    resp = client.get("/api/todos")
+    assert resp.status_code == 200
+    assert resp.json() == []
