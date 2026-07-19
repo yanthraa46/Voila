@@ -49,12 +49,13 @@ async def update_todo(todo_id: str, body: TodoUpdate, db: Session = Depends(get_
             raise HTTPException(status_code=404, detail="todo not found")
         todo.completed = body.completed
         db.add(todo)
-        db.flush()
+        db.commit()
         db.refresh(todo)
         return todo
     except HTTPException:
         raise
     except SQLAlchemyError as exc:
+        db.rollback()
         raise HTTPException(status_code=500, detail="failed to update todo") from exc
 
 
