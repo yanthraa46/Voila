@@ -14,7 +14,7 @@ from app.routers import todos
 #   response: {id: int, title: str, completed: bool}
 # PATCH /api/todos/{id}
 #   request:  {completed: bool}
-#   response: {id: int, title: str, completed: bool}
+#   response: {todo: {id: int, title: str, completed: bool}}
 # DELETE /api/todos/{id}
 #   response: {success: true}
 # GET /health
